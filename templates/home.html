@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+{% set test = 123 %}
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Library Home</title>
+  </head>
+  <body>
+
+    <h1>Welcome to Book Alchemy</h1>
+
+    <form action="/" method="GET">
+        <input type="text" name="q" placeholder="Search for a book..." value="{{ query or '' }}">
+        <select name="sort">
+            <option value="title"  {% if sort_by == 'title' %}selected{% endif %}>Sort by Title</option>
+            <option value="author" {% if sort_by == 'author' %}selected{% endif %}>Sort by Author</option>
+        </select>
+        <button type="submit">Apply</button>
+    </form>
+
+    <hr>
+
+    {% if books %}
+        <ul>
+        {% for book in books %}
+            <li>
+                <img src="https://covers.openlibrary.org/b/isbn/{{ book.isbn }}-S.jpg" alt="Cover" style="height:80px; vertical-align: middle;">
+                <strong>{{ book.title }}</strong> — {{ book.author.name }}
+                <form action="/book/{{ book.id }}/delete" method="POST" style="display:inline;">
+                    <button type="submit" onclick="return confirm('Are you sure?')">Delete</button>
+                </form>
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p>No books found.</p>
+    {% endif %}
+
+  </body>
+</html>
