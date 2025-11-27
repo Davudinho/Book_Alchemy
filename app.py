@@ -2,34 +2,47 @@ from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from data_models import db, Author, Book
 import os
+from dotenv import load_dotenv
+from sqlalchemy.exc import SQLAlchemyError
+
+# ---------------------------------------------------
+# Environment-Variablen laden
+# ---------------------------------------------------
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = "supersecret"
 
-# Datenbankpfad setzen
+# SECRET_KEY aus .env
+app.secret_key = os.getenv("SECRET_KEY", "fallback_secret_key")
+
+# API-KEY aus .env
+API_KEY = os.getenv("API_KEY")
+
+# ---------------------------------------------------
+# Datenbank Konfiguration
+# ---------------------------------------------------
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{os.path.join(basedir, 'data/library.sqlite')}"
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(basedir, 'data/library.sqlite')}"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
 
 
 # ---------------------------------------------------
-# Startseite: Zeigt alle Bücher + Abfrage
+# Startseite
 # ---------------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
     query = request.args.get("q")
-    sort_by = request.args.get("sort", "title")  # Titel = Standard
+    sort_by = request.args.get("sort", "title")
 
-    # Basis-Query
     books_query = Book.query
 
-    # Stichwortsuche
+    # Suche
     if query:
         books_query = books_query.filter(Book.title.like(f"%{query}%"))
 
-    # Sortieren
+    # Sortierung
     if sort_by == "author":
         books_query = books_query.join(Author).order_by(Author.name.asc())
     else:
@@ -37,7 +50,12 @@ def home():
 
     books = books_query.all()
 
-    return render_template("home.html", books=books, sort_by=sort_by, query=query)
+    return render_template(
+        "home.html",
+        books=books,
+        sort_by=sort_by,
+        query=query
+    )
 
 
 # ---------------------------------------------------
@@ -56,8 +74,13 @@ def add_author():
             date_of_death=date_of_death
         )
 
-        db.session.add(new_author)
-        db.session.commit()
+        try:
+            db.session.add(new_author)
+            db.session.commit()
+            flash("Author added successfully!", "success")
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            flash(f"Database error: {str(e)}", "danger")
 
         return render_template("add_author.html", success=True)
 
@@ -84,8 +107,13 @@ def add_book():
             author_id=author_id
         )
 
-        db.session.add(new_book)
-        db.session.commit()
+        try:
+            db.session.add(new_book)
+            db.session.commit()
+            flash("Book added successfully!", "success")
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            flash(f"Database error: {str(e)}", "danger")
 
         return render_template("add_book.html", authors=authors, success=True)
 
@@ -93,32 +121,38 @@ def add_book():
 
 
 # ---------------------------------------------------
-# Buch löschen
+# Buch löschen (inkl. Autor, wenn leer)
 # ---------------------------------------------------
 @app.route("/book/<int:book_id>/delete", methods=["POST"])
 def delete_book(book_id):
     book = Book.query.get_or_404(book_id)
     author = book.author
 
-    # Buch löschen
-    db.session.delete(book)
-    db.session.commit()
-
-    # Prüfen, ob Autor noch Bücher hat
-    if len(author.books) == 0:
-        db.session.delete(author)
+    try:
+        db.session.delete(book)
         db.session.commit()
-        flash(f"Book and author '{author.name}' have been deleted.", "success")
-    else:
-        flash(f"Book '{book.title}' has been deleted.", "success")
+
+        # Falls Autor danach keine Bücher mehr hat → löschen
+        if len(author.books) == 0:
+            db.session.delete(author)
+            db.session.commit()
+            flash(f"Book and author '{author.name}' deleted.", "success")
+        else:
+            flash(f"Book '{book.title}' deleted.", "success")
+
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        flash(f"Error deleting book: {str(e)}", "danger")
 
     return redirect(url_for("home"))
 
 
 # ---------------------------------------------------
-# Tabellen einmalig erstellen
+# Tabellen initialisieren
 # ---------------------------------------------------
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
-        app.run(debug=True)
+    # Falls du einmalig Tabellen erstellen willst:
+    # with app.app_context():
+    #     db.create_all()
+
+    app.run(debug=True)
